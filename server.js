@@ -3,182 +3,129 @@ const axios = require('axios');
 const app = express();
 const PORT = process.env.PORT || 8080;
 
-// CORS
 app.use((req, res, next) => {
     res.header('Access-Control-Allow-Origin', '*');
-    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
     next();
 });
 
 // ================= MANIFEST =================
-const manifest = {
-    "id": "community.astemio.verified",
-    "version": "2.0.0",
-    "name": "Astemio Verified Proxy",
-    "description": "Proxy con SOLO provider testati e funzionanti",
-    "resources": ["stream"],
-    "types": ["movie", "series"],
-    "idPrefixes": ["tt"]
-};
-
 app.get('/manifest.json', (req, res) => {
-    res.json(manifest);
+    res.json({
+        "id": "community.astemio.debug",
+        "version": "3.0.0",
+        "name": "DEBUG Proxy",
+        "resources": ["stream"],
+        "types": ["movie", "series"]
+    });
 });
 
-// ================= 3 FONTI VERIFICATE =================
-
-// 1. TORRENTIO (FUNZIONA - testato ora)
-async function getTorrentioStreams(type, id) {
-    try {
-        console.log(`🔍 Torrentio: cercando ${id}`);
-        const response = await axios.get(
-            `https://torrentio.strem.fun/stream/${type}/${id}.json`,
-            { timeout: 10000 }
-        );
-        
-        if (response.data && response.data.streams) {
-            // Filtra solo stream con magnet link validi
-            const validStreams = response.data.streams
-                .filter(stream => stream.url && stream.url.startsWith('magnet:'))
-                .map(stream => ({
-                    ...stream,
-                    source: 'Torrentio',
-                    behaviorHints: { 
-                        ...stream.behaviorHints,
-                        notWebReady: true 
-                    }
-                }));
-            
-            console.log(`✅ Torrentio: trovati ${validStreams.length} stream`);
-            return validStreams;
-        }
-        return [];
-    } catch (error) {
-        console.log('❌ Torrentio: offline o timeout');
-        return [];
-    }
-}
-
-// 2. ARCHIVE.ORG (FUNZIONA - testato ora)
-async function getArchiveStreams(type, id) {
-    // Mappa IMDb ID -> Archive.org URL (tutti verificati)
-    const archiveMap = {
-        "tt0013442": { // Nosferatu
-            url: "https://archive.org/download/Nosferatu1922FWF/Nosferatu_1922.mp4",
-            title: "Nosferatu (1922) - HD Restaurato"
-        },
-        "tt0017136": { // Metropolis
-            url: "https://archive.org/download/Metropolis_201402/Metropolis.mp4",
-            title: "Metropolis (1927) - Versione completa"
-        },
-        "tt0032138": { // Wizard of Oz
-            url: "https://archive.org/download/TheWizardOfOz1939_201903",
-            title: "Il mago di Oz (1939)"
-        },
-        "tt0059742": { // Jungle Book
-            url: "https://archive.org/download/TheJungleBook1967_201905",
-            title: "Il libro della giungla (1967)"
-        }
-    };
-    
-    if (archiveMap[id]) {
-        console.log(`✅ Archive.org: trovato ${archiveMap[id].title}`);
-        return [{
-            "name": `Archive.org: ${archiveMap[id].title}`,
-            "title": `${archiveMap[id].title} (Pubblico Dominio)`,
-            "url": archiveMap[id].url,
-            "source": "Archive.org",
-            "behaviorHints": { 
-                "notWebReady": false,
-                "proxyHeaders": { "Referer": "https://archive.org/" }
-            }
-        }];
-    }
-    return [];
-}
-
-// 3. YOUTUBE PUBLIC DOMAIN (FUNZIONA - testato ora)
-async function getYouTubeStreams(type, id) {
-    const youtubeMap = {
-        "tt0013442": { // Nosferatu
-            id: "Q0NzALRJifI",
-            title: "Nosferatu il vampiro (1922)"
-        },
-        "tt0021884": { // M - Il mostro di Düsseldorf
-            id: "7TTH23I0Hl4", 
-            title: "M - Il mostro di Düsseldorf (1931)"
-        },
-        "tt0033467": { // Citizen Kane
-            id: "1QjXeuSMvYo",
-            title: "Quarto potere (1941)"
-        },
-        "tt0045152": { // Singin' in the Rain
-            id: "D1ZYhVpdXbQ",
-            title: "Cantando sotto la pioggia (1952)"
-        }
-    };
-    
-    if (youtubeMap[id]) {
-        console.log(`✅ YouTube: trovato ${youtubeMap[id].title}`);
-        return [{
-            "name": `YouTube: ${youtubeMap[id].title}`,
-            "title": `${youtubeMap[id].title} (YouTube - Pubblico Dominio)`,
-            "url": `https://www.youtube.com/watch?v=${youtubeMap[id].id}`,
-            "ytId": youtubeMap[id].id,
-            "source": "YouTube",
-            "behaviorHints": { 
-                "notWebReady": false,
-                "bingeGroup": `yt-${id}`
-            }
-        }];
-    }
-    return [];
-}
-
-// ================= MAIN STREAM HANDLER =================
+// ================= DEBUG STREAM HANDLER =================
 app.get('/stream/:type/:id/:extra?.json', async (req, res) => {
     const { type, id } = req.params;
-    console.log(`\n🎬 Richiesta per: ${type}/${id}`);
     
-    let allStreams = [];
+    console.log(`\n=== DEBUG START per ${id} ===`);
+    console.log(`1. Ricevuta richiesta: ${type}/${id}`);
     
-    // CERCA IN SEQUENZA (non in parallelo per evitare timeout)
+    const allStreams = [];
+    const errors = [];
+    
+    // 1. PROVA TORRENTIO CON LOG DETTAGLIATO
+    console.log(`2. Provando Torrentio...`);
     try {
-        // 1. PRIMA Torrentio (migliore)
-        const torrentioStreams = await getTorrentioStreams(type, id);
-        allStreams.push(...torrentioStreams);
+        const torrentioUrl = `https://torrentio.strem.fun/stream/${type}/${id}.json`;
+        console.log(`   URL: ${torrentioUrl}`);
         
-        // 2. POI Archive.org (se non abbastanza torrent)
-        if (allStreams.length < 3) {
-            const archiveStreams = await getArchiveStreams(type, id);
-            allStreams.push(...archiveStreams);
+        const startTime = Date.now();
+        const response = await axios.get(torrentioUrl, {
+            timeout: 15000,
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Stremio Proxy)'
+            }
+        });
+        const endTime = Date.now();
+        
+        console.log(`   ✅ Torrentio risponde in ${endTime - startTime}ms`);
+        console.log(`   Status: ${response.status}`);
+        console.log(`   Content-Type: ${response.headers['content-type']}`);
+        
+        if (response.data && response.data.streams) {
+            console.log(`   Stream trovati: ${response.data.streams.length}`);
+            
+            // Prendi solo i primi 5 stream per debug
+            const torrentioStreams = response.data.streams.slice(0, 5).map((s, i) => ({
+                "name": `Torrentio ${i+1}: ${s.name || s.title || 'Stream'}`,
+                "title": `${s.title || `Stream ${i+1}`} (${s.seeds || 0} seeds)`,
+                "url": s.url,
+                "source": "Torrentio",
+                "behaviorHints": s.behaviorHints || {}
+            }));
+            
+            allStreams.push(...torrentioStreams);
+            
+            // Log dettagliato di ogni stream
+            torrentioStreams.forEach((s, i) => {
+                console.log(`     ${i+1}. ${s.name}`);
+                console.log(`        URL: ${s.url.substring(0, 60)}...`);
+            });
+            
+        } else {
+            console.log(`   ⚠️  Torrentio: data.streams non esistente`);
+            errors.push('Torrentio: struttura dati inattesa');
         }
         
-        // 3. INFINE YouTube (sempre per film pubblici)
-        const ytStreams = await getYouTubeStreams(type, id);
-        allStreams.push(...ytStreams);
-        
     } catch (error) {
-        console.error('❌ Errore nella ricerca:', error.message);
+        console.log(`   ❌ Torrentio errore: ${error.code || error.message}`);
+        console.log(`   Dettaglio: ${error.response?.status || 'N/A'}`);
+        errors.push(`Torrentio: ${error.message}`);
     }
     
-    // FALLBACK GARANTITO
-    if (allStreams.length === 0) {
-        console.log('⚠️  Nessuno stream trovato, uso fallback');
+    // 2. ARCHIVE.ORG (solo per film specifici)
+    console.log(`3. Provando Archive.org...`);
+    const archiveFilms = {
+        "tt0013442": "Nosferatu (1922)",
+        "tt0017136": "Metropolis (1927)",
+        "tt0033467": "Citizen Kane (1941)"
+    };
+    
+    if (archiveFilms[id]) {
+        console.log(`   ✅ Film trovato in Archive.org: ${archiveFilms[id]}`);
         allStreams.push({
-            "name": "Astemio Proxy Demo",
-            "title": "Big Buck Bunny (Demo - sempre disponibile)",
-            "url": "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
-            "source": "Fallback",
-            "behaviorHints": { "notWebReady": false }
+            "name": `Archive: ${archiveFilms[id]}`,
+            "title": `${archiveFilms[id]} - Pubblico Dominio`,
+            "url": `https://archive.org/download/${archiveFilms[id].replace(/[^a-zA-Z0-9]/g, '')}`,
+            "source": "Archive.org"
+        });
+    } else {
+        console.log(`   ⏭️  Film ${id} non in Archive.org database`);
+    }
+    
+    // 3. RISULTATO FINALE
+    console.log(`\n=== RISULTATO FINALE ===`);
+    console.log(`Stream totali: ${allStreams.length}`);
+    console.log(`Errori: ${errors.length > 0 ? errors.join(', ') : 'Nessuno'}`);
+    
+    if (allStreams.length === 0) {
+        console.log(`⚠️  NESSUNO STREAM TROVATO, uso emergency fallback`);
+        console.log(`   Film cercato: ${id}`);
+        console.log(`   Suggerimento: prova tt0111161 (The Shawshank Redemption)`);
+        
+        // FALLBACK INTELLIGENTE - non Big Buck Bunny!
+        const suggestions = {
+            "tt0068646": "Prova anche tt0071562 (The Godfather Part II)",
+            "tt0133093": "Prova anche tt0234215 (The Matrix Reloaded)",
+            "default": "Prova: tt0111161 (Shawshank), tt0076759 (Star Wars)"
+        };
+        
+        allStreams.push({
+            "name": "DEBUG: Nessuno stream trovato",
+            "title": `Per ${id} - ${suggestions[id] || suggestions.default}`,
+            "url": "",
+            "source": "Debug Info",
+            "behaviorHints": { "notWebReady": true }
         });
     }
     
-    // LOG DEI RISULTATI
-    console.log(`📊 Risultati finali: ${allStreams.length} stream`);
-    allStreams.forEach((stream, i) => {
-        console.log(`  ${i+1}. [${stream.source}] ${stream.title}`);
-    });
+    console.log(`=== DEBUG END ===\n`);
     
     res.json({ streams: allStreams });
 });
@@ -187,17 +134,11 @@ app.get('/stream/:type/:id/:extra?.json', async (req, res) => {
 app.get('/', (req, res) => {
     res.json({
         status: 'online',
-        proxy: 'Astemio Verified Proxy',
-        version: '2.0',
-        verified_sources: [
-            'Torrentio (torrent) - TESTATO ✔️',
-            'Archive.org (direct) - TESTATO ✔️', 
-            'YouTube Public Domain - TESTATO ✔️'
-        ],
-        test_movies: [
-            { id: 'tt0013442', title: 'Nosferatu (1922)' },
-            { id: 'tt0111161', title: 'The Shawshank Redemption' },
-            { id: 'tt0068646', title: 'The Godfather' }
+        proxy: 'DEBUG Mode',
+        test_urls: [
+            "/stream/movie/tt0068646.json → The Godfather",
+            "/stream/movie/tt0111161.json → Shawshank Redemption", 
+            "/stream/movie/tt0013442.json → Nosferatu (Archive.org)"
         ]
     });
 });
@@ -205,10 +146,12 @@ app.get('/', (req, res) => {
 // ================= START =================
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`
-✅ ASTEMIO VERIFIED PROXY
+🔍 DEBUG PROXY ATTIVO
 📍 Porta: ${PORT}
-🔧 Fonti VERIFICATE: 3/3 funzionanti
-📡 Torrentio: ✔️  Archive.org: ✔️  YouTube: ✔️
-📄 Manifest: http://localhost:${PORT}/manifest.json
+📊 Log dettagliati abilitati
+🎬 Test consigliati:
+   - tt0111161 (Shawshank) - dovrebbe funzionare
+   - tt0068646 (Godfather) - debug dettagliato
+   - tt0013442 (Nosferatu) - Archive.org
     `);
 });
